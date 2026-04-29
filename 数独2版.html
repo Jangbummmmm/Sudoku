@@ -1,0 +1,1859 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>数独·智能逻辑提示（优化版）</title>
+    <style>
+        * {
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+            background: #f5f7fb;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+        .game-container {
+            background: white;
+            border-radius: 32px;
+            box-shadow: 0 12px 28px rgba(0,0,0,0.08);
+            padding: 20px 24px 24px 24px;
+            display: flex;
+            gap: 24px;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: flex-start;
+            position: relative;
+        }
+        .sudoku-area { 
+            flex: 0 0 auto; 
+            position: relative;
+        }
+        .note-mode-badge {
+            display: none;
+            position: absolute;
+            top: 50px;
+            right: -10px;
+            background: #f59e0b;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            z-index: 20;
+            pointer-events: none;
+            animation: bounceIn 0.3s ease;
+        }
+        .note-mode-badge.active { display: block; }
+        @keyframes bounceIn {
+            0% { transform: scale(0.8); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        .right-panel {
+            flex: 0 0 auto;
+            width: 150px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        .number-pad {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            background: #f8fafc;
+            padding: 16px 12px;
+            border-radius: 28px;
+        }
+        .num-btn {
+            background: white;
+            border: none;
+            border-radius: 40px;
+            font-size: 24px;
+            font-weight: 600;
+            padding: 8px 0;
+            cursor: pointer;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            position: relative;
+            transition: 0.05s linear;
+        }
+        .num-btn.completed::after {
+            content: "✓";
+            position: absolute;
+            top: -6px;
+            right: -4px;
+            background: #10b981;
+            color: white;
+            font-size: 12px;
+            width: 18px;
+            height: 18px;
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .num-btn:active { transform: scale(0.96); }
+        .del-btn, .hint-btn {
+            background: #eef2ff;
+            border: none;
+            border-radius: 40px;
+            padding: 10px 0;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+        }
+        .del-btn { background: #fee2e2; color: #b91c1c; }
+        .hint-btn { background: #dbeafe; color: #1e40af; }
+        .rank-btn { background: #fbbf24; font-weight: bold; }
+        
+        .top-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #f1f5f9;
+            padding: 8px 16px;
+            border-radius: 60px;
+            margin-bottom: 16px;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .timer-display {
+            font-family: monospace;
+            font-size: 24px;
+            font-weight: 700;
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 2px 12px;
+            border-radius: 40px;
+        }
+        .badge {
+            padding: 2px 12px;
+            border-radius: 40px;
+            font-weight: bold;
+            font-size: 14px;
+        }
+        .error-badge { background: #fee2e2; color: #b91c1c; }
+        .hint-badge { background: #dbeafe; color: #1e40af; }
+        .diff-badge { background: #ede9fe; color: #7c3aed; }
+        
+        .sudoku-grid {
+            display: grid;
+            grid-template-columns: repeat(9, 1fr);
+            background-color: #2c3e50;
+            border: 2px solid #2c3e50;
+            border-radius: 12px;
+            overflow: hidden;
+            width: 450px;
+            height: 450px;
+            position: relative;
+        }
+        .cell {
+            background-color: white;
+            border: 1px solid #cbd5e1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            aspect-ratio: 1 / 1;
+            min-width: 0;
+            min-height: 0;
+            overflow: hidden;
+            font-size: 24px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            z-index: 1;
+        }
+        .cell[data-col="2"]:not([data-col="8"]) { border-right: 2px solid #2c3e50; }
+        .cell[data-col="5"]:not([data-col="8"]) { border-right: 2px solid #2c3e50; }
+        .cell[data-row="2"]:not([data-row="8"]) { border-bottom: 2px solid #2c3e50; }
+        .cell[data-row="5"]:not([data-row="8"]) { border-bottom: 2px solid #2c3e50; }
+        .cell.selected {
+            background-color: #dbeafe;
+            box-shadow: inset 0 0 0 2px #3b82f6;
+            z-index: 1;
+        }
+        .cell.conflict-highlight { background-color: rgba(164, 252, 255, 0.77) !important; }
+        .cell.same-number-highlight { background-color: rgba(202, 251, 253, 0.77); }
+        .cell.hint-region-row { background-color: #dbeafe !important; transition: all 0.3s ease; }
+        .cell.hint-region-col { background-color: #dcfce7 !important; transition: all 0.3s ease; }
+        .cell.hint-region-block { background-color: #f3e8ff !important; transition: all 0.3s ease; }
+        .cell.hint-excluded { opacity: 0.5; background: #e2e8f0 !important; transition: all 0.3s ease; }
+        .cell.hint-target { 
+            background-color: #fef08a !important; 
+            box-shadow: inset 0 0 0 2px #eab308; 
+            z-index: 10;
+            animation: pulse 1s infinite;
+            transition: all 0.3s ease;
+        }
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.02); }
+        }
+        .fixed-number { color: #334155; }
+        .user-number { color: #3b82f6; }
+        .main-number {
+            font-size: 26px;
+            font-weight: 500;
+            line-height: 1;
+            display: inline-block;
+        }
+        .main-number.error { color: #e11d48 !important; }
+        
+        .notes-container {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 2px;
+            width: 100%;
+            height: 100%;
+            padding: 4px;
+            box-sizing: border-box;
+            overflow: hidden;
+        }
+        .note-digit {
+            font-size: 11px;
+            text-align: center;
+            color: #1e293b;
+            line-height: 1.2;
+            font-weight: 500;
+        }
+        .toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+            margin-top: 16px;
+        }
+        button, select {
+            background: #f1f5f9;
+            border: none;
+            padding: 6px 16px;
+            border-radius: 40px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: 0.1s;
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        button:active { transform: scale(0.96); }
+        button.active {
+            background-color: #3b82f6 !important;
+            color: white !important;
+            box-shadow: inset 0 3px 6px rgba(0,0,0,0.2);
+        }
+        .primary-btn { background: #0284c7; color: white; }
+        
+        .modal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.2);
+            display: flex;
+            align-items: center; justify-content: flex-end;
+            z-index: 1000;
+            padding-right: 20px;
+        }
+        .modal-content {
+            background: white; border-radius: 32px; padding: 24px;
+            max-width: 320px; width: 90%; max-height: 70vh; overflow-y: auto;
+            position: relative;
+            box-shadow: 0 12px 28px rgba(0,0,0,0.15);
+        }
+        .hint-modal-content { border-top: 6px solid #eab308; }
+        .hint-title { color: #854d0e; margin-top: 0; display: flex; align-items: center; gap: 8px;}
+        .hint-desc { font-size: 15px; color: #334155; line-height: 1.6; margin-bottom: 16px; min-height: 80px;}
+        .hint-step-indicator { color: #94a3b8; font-size: 12px; margin-bottom: 8px; }
+        .hint-steps-nav {
+            display: flex; gap: 8px; margin-bottom: 16px; justify-content: space-between;
+        }
+        .hint-actions { display: flex; gap: 10px; justify-content: flex-end; }
+        
+        .rank-item {
+            display: flex; justify-content: space-between;
+            padding: 6px 0; border-bottom: 1px solid #e2e8f0;
+        }
+        .loading-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(255, 255, 255, 0.85); border-radius: 32px;
+            display: none; flex-direction: column; justify-content: center; align-items: center;
+            z-index: 500; color: #0284c7; font-weight: 600; font-size: 18px;
+        }
+        .loading-overlay.active { display: flex; }
+        .spinner {
+            width: 40px; height: 40px; border: 4px solid #cbd5e1;
+            border-top-color: #0284c7; border-radius: 50%;
+            animation: spin 0.8s linear infinite; margin-bottom: 12px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        
+        .toast-container {
+            position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+            z-index: 9999; display: flex; flex-direction: column; gap: 8px;
+        }
+        .toast {
+            padding: 12px 24px; border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            animation: fadeIn 0.3s ease; font-weight: 500; text-align: center;
+        }
+        .toast.toast-error { background: #fee2e2; color: #b91c1c; }
+        .toast.toast-success { background: #dcfce7; color: #166534; }
+        .toast.toast-info { background: #dbeafe; color: #1e40af; }
+        .toast.toast-warning { background: #fef08a; color: #854d0e; }
+        @keyframes fadeIn { from { opacity:0; transform: translateY(-10px) translateX(-50%); } to { opacity:1; transform: translateY(0) translateX(-50%); } }
+        
+        @media (max-width: 680px) {
+            .sudoku-grid { width: 360px; height: 360px; }
+            .main-number { font-size: 20px; }
+            .num-btn { font-size: 20px; padding: 4px 0; }
+            .note-digit { font-size: 9px; }
+            .modal { justify-content: center; padding-right: 0; }
+        }
+    </style>
+</head>
+<body>
+<div id="toastContainer" class="toast-container"></div>
+<div class="game-container" id="gameContainer">
+    <div id="loadingOverlay" class="loading-overlay">
+        <div class="spinner"></div>
+        <div>正在为您生成完美数独...</div>
+    </div>
+    <div class="sudoku-area">
+        <div class="top-info">
+            <div class="timer-display" id="timerDisplay">00:00</div>
+            <div class="badge error-badge">❌ 错误 <span id="errorCount">0</span>/3</div>
+            <div class="badge hint-badge">💡 提示 <span id="hintCount">0</span>/3</div>
+            <div class="badge diff-badge">📊 难度 <span id="diffPercent">--</span>%</div>
+            <button id="pauseBtn" style="background:#334155;color:white;">⏸️ 暂停</button>
+        </div>
+        <div id="noteModeIndicator" class="note-mode-badge">✏️ 笔记模式中</div>
+        <div id="sudokuGrid" class="sudoku-grid"></div>
+        <div class="toolbar">
+            <button id="undoBtn" disabled>↩️ 撤销</button>
+            <button id="redoBtn" disabled>↪️ 重做</button>
+            <button id="noteModeBtn">✏️ 笔记模式</button>
+            <button id="solveBtn" class="primary-btn">⚡ 求解</button>
+            <button id="resetBtn">🗑️ 重置</button>
+            <button id="hardestBtn">🏆 最难</button>
+        </div>
+    </div>
+    <div class="right-panel">
+        <div class="number-pad" id="numberPad"></div>
+        <button id="deleteBtn" class="del-btn">⌫ 删除</button>
+        <button id="hintBtn" class="hint-btn">💡 智能提示</button>
+        <button id="rankBtn" class="rank-btn">🏅 排名榜</button>
+        <select id="difficultySelect">
+            <option value="easy">🌱 简单 (35-40空)</option>
+            <option value="medium">🍂 中等 (45-50空)</option>
+            <option value="hard">🔥 困难 (55-60空)</option>
+            <option value="expert">🧠 专家 (60-65空)</option>
+            <option value="master">💀 大师 (65-70空)</option>
+            <option value="extreme">👑 终极 (70-75空)</option>
+        </select>
+        <button id="generateBtn" class="primary-btn">🎲 新题目</button>
+    </div>
+</div>
+<script>
+// 常量定义
+const MAX_ERRORS = 3;
+const MAX_HINTS = 3;
+const MAX_HISTORY = 50;
+const STORAGE_VERSION = 3;          // 升级版本，触发数据清理
+const MAX_RANK_ENTRIES = 100;       // 每个难度最多保留100条记录，防止排行榜卡死
+
+// ==========================================
+// 1. 工具模块：纯函数与数独算法
+// ==========================================
+const SudokuUtils = {
+    getPossibilities(board, r, c) {
+        const used = new Set();
+        for (let j = 0; j < 9; j++) used.add(board[r][j]);
+        for (let i = 0; i < 9; i++) used.add(board[i][c]);
+        const sr = Math.floor(r / 3) * 3, sc = Math.floor(c / 3) * 3;
+        for (let i = sr; i < sr + 3; i++) for (let j = sc; j < sc + 3; j++) used.add(board[i][j]);
+        const res = [];
+        for (let n = 1; n <= 9; n++) if (!used.has(n)) res.push(n);
+        return res;
+    },
+
+    isSafe(board, r, c, num) {
+        for (let j = 0; j < 9; j++) if (board[r][j] === num) return false;
+        for (let i = 0; i < 9; i++) if (board[i][c] === num) return false;
+        const sr = Math.floor(r / 3) * 3, sc = Math.floor(c / 3) * 3;
+        for (let i = sr; i < sr + 3; i++) for (let j = sc; j < sc + 3; j++) if (board[i][j] === num) return false;
+        return true;
+    },
+
+    findBestEmpty(board) {
+        let minPoss = 10, best = null;
+        for (let i = 0; i < 9; i++) {
+            for (let j = 0; j < 9; j++) {
+                if (board[i][j] === 0) {
+                    const p = this.getPossibilities(board, i, j);
+                    if (p.length < minPoss) {
+                        minPoss = p.length; best = [i, j];
+                        if (minPoss === 1) return best;
+                    }
+                }
+            }
+        }
+        return best;
+    },
+
+    backtrackSolve(board) {
+        const empty = this.findBestEmpty(board);
+        if (!empty) return true;
+        const [r, c] = empty;
+        for (let val of this.getPossibilities(board, r, c)) {
+            board[r][c] = val;
+            if (this.backtrackSolve(board)) return true;
+            board[r][c] = 0;
+        }
+        return false;
+    },
+
+    getSolution(board) {
+        const copy = board.map(row => [...row]);
+        if (this.backtrackSolve(copy)) return copy;
+        return null;
+    },
+
+    countSolutions(board, limit = 2) {
+        let cnt = 0;
+        const dfs = (b) => {
+            if (cnt >= limit) return;
+            const empty = this.findBestEmpty(b);
+            if (!empty) { cnt++; return; }
+            const [r, c] = empty;
+            for (let val of this.getPossibilities(b, r, c)) {
+                b[r][c] = val; dfs(b); b[r][c] = 0;
+                if (cnt >= limit) return;
+            }
+        };
+        const copy = board.map(row => [...row]); dfs(copy); return cnt;
+    },
+
+    generateRandomCompleteBoard() {
+        const numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+        for (let i = numbers.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [numbers[i], numbers[j]] = [numbers[j], numbers[i]];
+        }
+        const board = Array(9).fill().map(() => Array(9).fill(0));
+        const self = this;
+        function fill() {
+            const e = self.findBestEmpty(board); if (!e) return true;
+            const [r, c] = e;
+            for (let num of numbers) {
+                if (self.isSafe(board, r, c, num)) {
+                    board[r][c] = num;
+                    if (fill()) return true;
+                    board[r][c] = 0;
+                }
+            }
+            return false;
+        }
+        fill();
+        return board;
+    },
+
+    generateSymmetricalPuzzle(complete, targetHoles) {
+        const puzzle = complete.map(row => [...row]);
+        let pairs = [];
+        for (let i = 0; i < 9; i++) {
+            for (let j = 0; j < 9; j++) {
+                if (i <= 8 - i && (i < 8 - i || j <= 8 - j)) {
+                    pairs.push([[i, j], [8 - i, 8 - j]]);
+                }
+            }
+        }
+        for (let i = pairs.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [pairs[i], pairs[j]] = [pairs[j], pairs[i]];
+        }
+        let holes = 0;
+        for (let [a, b] of pairs) {
+            if (holes >= targetHoles) break;
+            const [r1, c1] = a, [r2, c2] = b;
+            const isCenter = (r1 === r2 && c1 === c2);
+            const orig1 = puzzle[r1][c1], orig2 = isCenter ? null : puzzle[r2][c2];
+            puzzle[r1][c1] = 0;
+            if (!isCenter) puzzle[r2][c2] = 0;
+            if (this.countSolutions(puzzle, 2) === 1) {
+                holes += isCenter ? 1 : 2;
+            } else {
+                puzzle[r1][c1] = orig1;
+                if (!isCenter) puzzle[r2][c2] = orig2;
+            }
+        }
+        if (holes < targetHoles) {
+            for (let [a, b] of pairs) {
+                if (holes >= targetHoles) break;
+                if (puzzle[a[0]][a[1]] === 0) continue;
+                const [r1, c1] = a, [r2, c2] = b;
+                const isCenter = (r1 === r2 && c1 === c2);
+                const orig1 = puzzle[r1][c1], orig2 = isCenter ? null : puzzle[r2][c2];
+                puzzle[r1][c1] = 0;
+                if (!isCenter) puzzle[r2][c2] = 0;
+                if (this.countSolutions(puzzle, 2) === 1) {
+                    holes += isCenter ? 1 : 2;
+                } else {
+                    puzzle[r1][c1] = orig1;
+                    if (!isCenter) puzzle[r2][c2] = orig2;
+                }
+            }
+        }
+        return puzzle;
+    },
+
+    evaluateSudokuDifficulty(puzzle) {
+        let board = puzzle.map(row => [...row]);
+        let cmap = Array(9).fill().map(() => Array(9).fill().map(() => new Set([1,2,3,4,5,6,7,8,9])));
+        let emptyCount = 0;
+        for (let r = 0; r < 9; r++) {
+            for (let c = 0; c < 9; c++) {
+                if (board[r][c] !== 0) {
+                    cmap[r][c].clear();
+                } else {
+                    emptyCount++;
+                    for (let i = 0; i < 9; i++) { cmap[r][c].delete(board[r][i]); cmap[r][c].delete(board[i][c]); }
+                    let sr = Math.floor(r/3)*3, sc = Math.floor(c/3)*3;
+                    for (let i = sr; i < sr + 3; i++) for (let j = sc; j < sc + 3; j++) cmap[r][c].delete(board[i][j]);
+                }
+            }
+        }
+        let maxTechLevel = 1;
+        let changed = true;
+        while (changed) {
+            changed = false;
+            for (let r = 0; r < 9; r++) {
+                for (let c = 0; c < 9; c++) {
+                    if (board[r][c] === 0 && cmap[r][c].size === 1) {
+                        let val = [...cmap[r][c]][0];
+                        board[r][c] = val; cmap[r][c].clear();
+                        for (let i = 0; i < 9; i++) { cmap[r][i].delete(val); cmap[i][c].delete(val); }
+                        let sr = Math.floor(r/3)*3, sc = Math.floor(c/3)*3;
+                        for (let i = sr; i < sr + 3; i++) for (let j = sc; j < sc + 3; j++) cmap[i][j].delete(val);
+                        changed = true; maxTechLevel = Math.max(maxTechLevel, 1);
+                    }
+                }
+            }
+            if (changed) continue;
+            for (let num = 1; num <= 9; num++) {
+                for (let r = 0; r < 9; r++) {
+                    let poss = [];
+                    for (let c = 0; c < 9; c++) if (board[r][c] === 0 && cmap[r][c].has(num)) poss.push({r,c});
+                    if (poss.length === 1) { cmap[poss[0].r][poss[0].c] = new Set([num]); changed = true; maxTechLevel = Math.max(maxTechLevel, 2); }
+                }
+                for (let c = 0; c < 9; c++) {
+                    let poss = [];
+                    for (let r = 0; r < 9; r++) if (board[r][c] === 0 && cmap[r][c].has(num)) poss.push({r,c});
+                    if (poss.length === 1) { cmap[poss[0].r][poss[0].c] = new Set([num]); changed = true; maxTechLevel = Math.max(maxTechLevel, 2); }
+                }
+                for (let b = 0; b < 9; b++) {
+                    let sr = Math.floor(b/3)*3, sc = (b%3)*3, poss = [];
+                    for (let i = sr; i < sr + 3; i++) for (let j = sc; j < sc + 3; j++) if (board[i][j] === 0 && cmap[i][j].has(num)) poss.push({r:i, c:j});
+                    if (poss.length === 1) { cmap[poss[0].r][poss[0].c] = new Set([num]); changed = true; maxTechLevel = Math.max(maxTechLevel, 2); }
+                }
+            }
+            if (changed) continue;
+            for (let num = 1; num <= 9; num++) {
+                for (let b = 0; b < 9; b++) {
+                    let sr = Math.floor(b/3)*3, sc = (b%3)*3, rows = new Set(), cols = new Set();
+                    for (let i = sr; i < sr + 3; i++) for (let j = sc; j < sc + 3; j++) if (board[i][j] === 0 && cmap[i][j].has(num)) { rows.add(i); cols.add(j); }
+                    if (rows.size === 1) {
+                        let r = [...rows][0];
+                        for (let c = 0; c < 9; c++) if (Math.floor(c/3)*3 !== sc && board[r][c] === 0 && cmap[r][c].has(num)) { cmap[r][c].delete(num); changed = true; maxTechLevel = Math.max(maxTechLevel, 3); }
+                    }
+                    if (cols.size === 1) {
+                        let c = [...cols][0];
+                        for (let r = 0; r < 9; r++) if (Math.floor(r/3)*3 !== sr && board[r][c] === 0 && cmap[r][c].has(num)) { cmap[r][c].delete(num); changed = true; maxTechLevel = Math.max(maxTechLevel, 3); }
+                    }
+                }
+            }
+            if (changed) continue;
+            for(let region = 0; region < 27; region++) {
+                let cells = [];
+                for(let k = 0; k < 9; k++) {
+                    let r, c;
+                    if (region < 9) { r = region; c = k; }
+                    else if (region < 18) { r = k; c = region - 9; }
+                    else { r = Math.floor((region-18)/3)*3 + Math.floor(k/3); c = ((region-18)%3)*3 + (k%3); }
+                    if (board[r][c] === 0 && cmap[r][c].size === 2) cells.push({r, c, vals: [...cmap[r][c]]});
+                }
+                for (let i = 0; i < cells.length; i++) {
+                    for (let j = i + 1; j < cells.length; j++) {
+                        let c1 = cells[i], c2 = cells[j];
+                        if (c1.vals[0] === c2.vals[0] && c1.vals[1] === c2.vals[1]) {
+                            for(let k = 0; k < 9; k++) {
+                                let r, c;
+                                if (region < 9) { r = region; c = k; }
+                                else if (region < 18) { r = k; c = region - 9; }
+                                else { r = Math.floor((region-18)/3)*3 + Math.floor(k/3); c = ((region-18)%3)*3 + (k%3); }
+                                if ((r !== c1.r || c !== c1.c) && (r !== c2.r || c !== c2.c) && board[r][c] === 0) {
+                                    if (cmap[r][c].has(c1.vals[0])) { cmap[r][c].delete(c1.vals[0]); changed = true; maxTechLevel = Math.max(maxTechLevel, 4); }
+                                    if (cmap[r][c].has(c1.vals[1])) { cmap[r][c].delete(c1.vals[1]); changed = true; maxTechLevel = Math.max(maxTechLevel, 4); }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if (changed) continue;
+            for (let num = 1; num <= 9; num++) {
+                let rowLocs = [];
+                for (let r = 0; r < 9; r++) {
+                    let cols = [];
+                    for (let c = 0; c < 9; c++) if (board[r][c] === 0 && cmap[r][c].has(num)) cols.push(c);
+                    if (cols.length === 2) rowLocs.push({r, cols});
+                }
+                for (let i = 0; i < rowLocs.length; i++) {
+                    for (let j = i + 1; j < rowLocs.length; j++) {
+                        let r1 = rowLocs[i], r2 = rowLocs[j];
+                        if (r1.cols[0] === r2.cols[0] && r1.cols[1] === r2.cols[1]) {
+                            let c1 = r1.cols[0], c2 = r1.cols[1];
+                            for (let r = 0; r < 9; r++) {
+                                if (r !== r1.r && r !== r2.r) {
+                                    if (board[r][c1] === 0 && cmap[r][c1].has(num)) { cmap[r][c1].delete(num); changed = true; maxTechLevel = Math.max(maxTechLevel, 5); }
+                                    if (board[r][c2] === 0 && cmap[r][c2].has(num)) { cmap[r][c2].delete(num); changed = true; maxTechLevel = Math.max(maxTechLevel, 5); }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let remaining = 0;
+        for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) if (board[r][c] === 0) remaining++;
+        if (remaining > 0) maxTechLevel = 6;
+        let baseScore = 0;
+        if (maxTechLevel === 1) baseScore = 5 + (emptyCount / 81) * 20;
+        else if (maxTechLevel === 2) baseScore = 25 + (emptyCount / 81) * 20;
+        else if (maxTechLevel === 3) baseScore = 45 + (emptyCount / 81) * 20;
+        else if (maxTechLevel === 4) baseScore = 65 + (emptyCount / 81) * 15;
+        else if (maxTechLevel === 5) baseScore = 80 + (emptyCount / 81) * 10;
+        else baseScore = 90 + (emptyCount / 81) * 10;
+        return Math.min(100, Math.max(1, Math.floor(baseScore)));
+    },
+
+    generateNewPuzzleData(diff, maxRetries = 5) {
+        for (let retry = 0; retry < maxRetries; retry++) {
+            let targetHoles;
+            switch (diff) {
+                case 'easy': targetHoles = 35 + Math.floor(Math.random() * 6); break;
+                case 'medium': targetHoles = 45 + Math.floor(Math.random() * 6); break;
+                case 'hard': targetHoles = 55 + Math.floor(Math.random() * 6); break;
+                case 'expert': targetHoles = 60 + Math.floor(Math.random() * 6); break;
+                case 'master': targetHoles = 65 + Math.floor(Math.random() * 6); break;
+                case 'extreme': targetHoles = 70 + Math.floor(Math.random() * 6); break;
+                default: targetHoles = 40;
+            }
+            const complete = this.generateRandomCompleteBoard();
+            let puzzle = this.generateSymmetricalPuzzle(complete, targetHoles);
+            let sol = this.getSolution(puzzle);
+            if (sol) return { puzzle, solution: sol };
+        }
+        const fallback = [[5,3,0,0,7,0,0,0,0],[6,0,0,1,9,5,0,0,0],[0,9,8,0,0,0,0,6,0],[8,0,0,0,6,0,0,0,3],[4,0,0,8,0,3,0,0,1],[7,0,0,0,2,0,0,0,6],[0,6,0,0,0,0,2,8,0],[0,0,0,4,1,9,0,0,5],[0,0,0,0,8,0,0,7,9]];
+        return { puzzle: fallback, solution: this.getSolution(fallback) };
+    }
+};
+
+// ==========================================
+// 2. 游戏核心类（含排行榜防卡死优化）
+// ==========================================
+class SudokuGame {
+    constructor() {
+        this.grid = Array(9).fill().map(() => Array(9).fill(0));
+        this.notes = Array(9).fill().map(() => Array(9).fill().map(() => new Set()));
+        this.solution = Array(9).fill().map(() => Array(9).fill(0));
+        this.isNoteMode = false;
+        this.selectedRow = -1;
+        this.selectedCol = -1;
+        this.currentPuzzle = null;
+        this.highlightCells = new Set();
+        this.sameNumberHighlightSet = new Set();
+        this.hintTargetCell = null;
+        this.currentHintSteps = null;
+        this.currentHintStepIndex = 0;
+        this.currentHintData = null;
+        this.currentDifficultyPercent = 0;
+        this.isHintModalOpen = false;
+
+        this.timerSeconds = 0;
+        this.gameStartTime = Date.now();
+        this.pausedTimeAccumulated = 0;
+        this.pauseStartTime = 0;
+        this.timerInterval = null;
+        this.isPaused = false;
+        this.isGameFinished = false;
+        this.errorCount = 0;
+        this.hintCount = 0;
+        this.usedSolve = false;
+        this.isGenerating = false;
+        
+        this.historyStack = [];
+        this.redoStack = [];
+        this.isHistoryProcessing = false;
+        this.currentPlayerName = "";
+        this.isAnonymous = false;
+        this.difficultyMultiplier = { easy: 1.0, medium: 1.2, hard: 1.5, expert: 1.8, master: 2.2, extreme: 3.0 };
+        this.dom = {
+            gridContainer: document.getElementById("sudokuGrid"),
+            noteModeBtn: document.getElementById("noteModeBtn"),
+            noteModeIndicator: document.getElementById("noteModeIndicator"),
+            solveBtn: document.getElementById("solveBtn"),
+            resetBtn: document.getElementById("resetBtn"),
+            generateBtn: document.getElementById("generateBtn"),
+            hardestBtn: document.getElementById("hardestBtn"),
+            undoBtn: document.getElementById("undoBtn"),
+            redoBtn: document.getElementById("redoBtn"),
+            difficultySelect: document.getElementById("difficultySelect"),
+            timerDisplay: document.getElementById("timerDisplay"),
+            pauseBtn: document.getElementById("pauseBtn"),
+            errorCountSpan: document.getElementById("errorCount"),
+            hintCountSpan: document.getElementById("hintCount"),
+            deleteBtn: document.getElementById("deleteBtn"),
+            hintBtn: document.getElementById("hintBtn"),
+            rankBtn: document.getElementById("rankBtn"),
+            numberPadDiv: document.getElementById("numberPad"),
+            loadingOverlay: document.getElementById("loadingOverlay"),
+            toastContainer: document.getElementById("toastContainer")
+        };
+        this.initRankData();
+        this.initDOMGrid();
+        this.buildNumberPad();
+        this.bindEvents();
+        this.initPlayer();
+    }
+
+    // 清理排名数据，每个难度最多保留 MAX_RANK_ENTRIES 条最高分记录
+    trimRankData() {
+        const difficulties = ['easy', 'medium', 'hard', 'expert', 'master', 'extreme'];
+        let changed = false;
+        for (const diff of difficulties) {
+            const rankObj = this.rankData[diff];
+            if (!rankObj || typeof rankObj !== 'object') continue;
+            const entries = Object.entries(rankObj);
+            if (entries.length <= MAX_RANK_ENTRIES) continue;
+            // 按 bestScore 降序排序
+            entries.sort((a, b) => b[1].bestScore - a[1].bestScore);
+            const trimmedEntries = entries.slice(0, MAX_RANK_ENTRIES);
+            const newRankObj = {};
+            for (const [name, data] of trimmedEntries) {
+                newRankObj[name] = data;
+            }
+            this.rankData[diff] = newRankObj;
+            changed = true;
+        }
+        if (changed) {
+            localStorage.setItem("sudoku_rank_data", JSON.stringify({ version: STORAGE_VERSION, data: this.rankData }));
+        }
+    }
+
+    initRankData() {
+        const defaultRankData = {};
+        let rankData;
+        try {
+            const raw = localStorage.getItem("sudoku_rank_data");
+            const parsed = raw ? JSON.parse(raw) : null;
+            if (!parsed || parsed.version !== STORAGE_VERSION) {
+                rankData = parsed?.data || parsed || defaultRankData;
+                // 清理旧数据时确保每个难度最多保留 MAX_RANK_ENTRIES
+                for (const diff of ['easy', 'medium', 'hard', 'expert', 'master', 'extreme']) {
+                    if (rankData[diff] && typeof rankData[diff] === 'object') {
+                        const entries = Object.entries(rankData[diff]);
+                        if (entries.length > MAX_RANK_ENTRIES) {
+                            entries.sort((a, b) => b[1].bestScore - a[1].bestScore);
+                            const newObj = {};
+                            for (const [name, data] of entries.slice(0, MAX_RANK_ENTRIES)) {
+                                newObj[name] = data;
+                            }
+                            rankData[diff] = newObj;
+                        }
+                    } else {
+                        rankData[diff] = {};
+                    }
+                }
+                localStorage.setItem("sudoku_rank_data", JSON.stringify({ version: STORAGE_VERSION, data: rankData }));
+            } else {
+                rankData = parsed.data;
+                // 确保各难度对象存在且大小受限
+                for (const diff of ['easy', 'medium', 'hard', 'expert', 'master', 'extreme']) {
+                    if (!rankData[diff]) rankData[diff] = {};
+                }
+            }
+        } catch (e) {
+            rankData = defaultRankData;
+            localStorage.setItem("sudoku_rank_data", JSON.stringify({ version: STORAGE_VERSION, data: rankData }));
+        }
+        this.rankData = rankData;
+        this.trimRankData(); // 启动时强制清理一次
+    }
+
+    showToast(message, type = "info", duration = 2500) {
+        const toast = document.createElement('div');
+        toast.className = `toast toast-${type}`;
+        toast.textContent = message;
+        this.dom.toastContainer.appendChild(toast);
+        setTimeout(() => {
+            toast.style.opacity = '0';
+            toast.style.transition = 'opacity 0.3s';
+            setTimeout(() => toast.remove(), 300);
+        }, duration);
+    }
+
+    initDOMGrid() {
+        this.dom.gridContainer.innerHTML = '';
+        for (let i = 0; i < 9; i++) {
+            for (let j = 0; j < 9; j++) {
+                const cell = document.createElement('div');
+                cell.className = 'cell';
+                cell.id = `cell-${i}-${j}`;
+                cell.setAttribute('data-row', i);
+                cell.setAttribute('data-col', j);
+                const span = document.createElement('span');
+                span.className = 'main-number';
+                span.id = `num-${i}-${j}`;
+                cell.appendChild(span);
+                const ndiv = document.createElement('div');
+                ndiv.className = 'notes-container';
+                ndiv.id = `notes-${i}-${j}`;
+                ndiv.style.display = 'none';
+                for (let n = 1; n <= 9; n++) {
+                    const ns = document.createElement('div');
+                    ns.className = 'note-digit';
+                    ns.id = `note-${i}-${j}-${n}`;
+                    ndiv.appendChild(ns);
+                }
+                cell.appendChild(ndiv);
+                cell.addEventListener('click', () => this.selectCell(i, j));
+                this.dom.gridContainer.appendChild(cell);
+            }
+        }
+    }
+
+    updateGridUI() {
+        for (let i = 0; i < 9; i++) {
+            for (let j = 0; j < 9; j++) {
+                const cell = document.getElementById(`cell-${i}-${j}`);
+                const numSpan = document.getElementById(`num-${i}-${j}`);
+                const notesDiv = document.getElementById(`notes-${i}-${j}`);
+                const hasHintClass = cell.classList.contains('hint-region-row') 
+                    || cell.classList.contains('hint-region-col') 
+                    || cell.classList.contains('hint-region-block')
+                    || cell.classList.contains('hint-excluded')
+                    || cell.classList.contains('hint-target');
+                if (!hasHintClass) {
+                    cell.className = 'cell';
+                    if (this.selectedRow === i && this.selectedCol === j) cell.classList.add('selected');
+                    if (!this.isGameFinished && this.highlightCells.has(`${i},${j}`)) cell.classList.add('conflict-highlight');
+                    if (!this.isGameFinished && this.sameNumberHighlightSet.has(`${i},${j}`)) cell.classList.add('same-number-highlight');
+                }
+                const val = this.grid[i][j];
+                if (val !== 0) {
+                    numSpan.style.display = 'inline-block';
+                    notesDiv.style.display = 'none';
+                    numSpan.textContent = val;
+                    numSpan.className = 'main-number';
+                    if (this.currentPuzzle && this.currentPuzzle[i][j] !== 0) numSpan.classList.add('fixed-number');
+                    else numSpan.classList.add('user-number');
+                    if (this.solution && this.solution[i][j] !== val) numSpan.classList.add('error');
+                } else {
+                    numSpan.style.display = 'none';
+                    const noteSet = this.notes[i][j];
+                    if (noteSet.size > 0) {
+                        notesDiv.style.display = 'grid';
+                        for (let n = 1; n <= 9; n++) {
+                            document.getElementById(`note-${i}-${j}-${n}`).textContent = noteSet.has(n) ? n : '';
+                        }
+                    } else {
+                        notesDiv.style.display = 'none';
+                    }
+                }
+            }
+        }
+        this.renderNumberPadCompletion();
+        this.updateHistoryButtons();
+    }
+
+    updateHistoryButtons() {
+        this.dom.undoBtn.disabled = this.historyStack.length === 0;
+        this.dom.redoBtn.disabled = this.redoStack.length === 0;
+    }
+
+    cloneNotes(notesArr) {
+        return notesArr.map(row => row.map(s => new Set(s)));
+    }
+
+    getCurrentState() {
+        return {
+            grid: this.grid.map(row => [...row]),
+            notes: this.cloneNotes(this.notes),
+            selectedRow: this.selectedRow,
+            selectedCol: this.selectedCol
+        };
+    }
+
+    saveHistory() {
+        if (this.isHistoryProcessing || this.isGameFinished) return;
+        this.historyStack.push(this.getCurrentState());
+        this.redoStack = [];
+        if (this.historyStack.length > MAX_HISTORY) this.historyStack.shift();
+        this.updateHistoryButtons();
+    }
+
+    restoreState(state) {
+        this.grid = state.grid;
+        this.notes = state.notes;
+        this.selectedRow = state.selectedRow;
+        this.selectedCol = state.selectedCol;
+        this.highlightCells = this.computeConflictHighlight(this.selectedRow, this.selectedCol);
+        if (this.grid[this.selectedRow]?.[this.selectedCol]) {
+            this.highlightSameNumbers(this.grid[this.selectedRow][this.selectedCol]);
+        }
+        this.updateGridUI();
+        this.autoSaveProgress();
+    }
+
+    undo() {
+        if (this.checkBlockInteraction() || this.historyStack.length === 0 || this.checkPaused()) return;
+        this.isHistoryProcessing = true;
+        this.redoStack.push(this.getCurrentState());
+        const prev = this.historyStack.pop();
+        this.restoreState(prev);
+        this.isHistoryProcessing = false;
+    }
+
+    redo() {
+        if (this.checkBlockInteraction() || this.redoStack.length === 0 || this.checkPaused()) return;
+        this.isHistoryProcessing = true;
+        this.historyStack.push(this.getCurrentState());
+        const next = this.redoStack.pop();
+        this.restoreState(next);
+        this.isHistoryProcessing = false;
+    }
+
+    formatTime(sec) { return `${Math.floor(sec/60).toString().padStart(2,'0')}:${(sec%60).toString().padStart(2,'0')}`; }
+    updateTimerDisplay() { this.dom.timerDisplay.textContent = this.formatTime(this.timerSeconds); }
+    updateErrorDisplay() { this.dom.errorCountSpan.textContent = this.errorCount; }
+    updateHintDisplay() { this.dom.hintCountSpan.textContent = this.hintCount; }
+    
+    startTimer() {
+        if (this.timerInterval) clearInterval(this.timerInterval);
+        this.gameStartTime = Date.now();
+        this.pausedTimeAccumulated = 0;
+        this.timerInterval = setInterval(() => {
+            if (!this.isPaused && !this.isGameFinished && !this.isHintModalOpen) {
+                const now = Date.now();
+                const elapsed = Math.floor((now - this.gameStartTime - this.pausedTimeAccumulated) / 1000);
+                this.timerSeconds = elapsed;
+                this.updateTimerDisplay();
+            }
+        }, 1000);
+    }
+    
+    stopTimer() { if (this.timerInterval) { clearInterval(this.timerInterval); this.timerInterval = null; } }
+    
+    pauseTimer() {
+        if (this.isGameFinished || this.checkBlockInteraction()) return;
+        this.isPaused = !this.isPaused;
+        if (this.isPaused) this.pauseStartTime = Date.now();
+        else this.pausedTimeAccumulated += Date.now() - this.pauseStartTime;
+        this.dom.pauseBtn.textContent = this.isPaused ? "▶️ 继续" : "⏸️ 暂停";
+    }
+    
+    checkPaused() {
+        if (this.isPaused) { this.showToast("游戏已暂停，请按「继续」后操作", "info"); return true; }
+        return false;
+    }
+
+    resetGameState() {
+        this.clearAllHintHighlights();
+        this.stopTimer();
+        this.timerSeconds = 0; this.updateTimerDisplay();
+        this.errorCount = 0; this.updateErrorDisplay();
+        this.hintCount = 0; this.updateHintDisplay();
+        this.isPaused = false; this.isGameFinished = false; this.usedSolve = false;
+        this.hintTargetCell = null;
+        this.historyStack = [];
+        this.redoStack = [];
+        this.updateHistoryButtons();
+        this.startTimer();
+        localStorage.removeItem("sudoku_progress");
+    }
+
+    countCorrectCells() {
+        let correct = 0;
+        for (let i = 0; i < 9; i++) for (let j = 0; j < 9; j++) if (this.grid[i][j] !== 0 && this.grid[i][j] === this.solution[i][j]) correct++;
+        return correct;
+    }
+
+    calculateScore(isComplete) {
+        const multiplier = this.difficultyMultiplier[this.dom.difficultySelect.value] || 1.0;
+        const baseScore = 10000 * multiplier;
+        let penalty = this.errorCount * 200 + this.hintCount * 100 + this.timerSeconds;
+        let score = isComplete ? (baseScore - penalty) : (baseScore * (this.countCorrectCells() / 81) - penalty);
+        return Math.max(0, Math.floor(score));
+    }
+
+    recordGameResult(isComplete) {
+        if (this.usedSolve || this.isAnonymous || !this.currentPlayerName || this.isGameFinished) return;
+        const difficulty = this.dom.difficultySelect.value;
+        const finalScore = this.calculateScore(isComplete);
+        if (!this.rankData[difficulty]) this.rankData[difficulty] = {};
+        const players = this.rankData[difficulty];
+        if (!players[this.currentPlayerName]) {
+            players[this.currentPlayerName] = { bestScore: finalScore, bestTime: this.timerSeconds, bestError: this.errorCount, bestHint: this.hintCount, finishedCount: 0 };
+        } else if (finalScore > players[this.currentPlayerName].bestScore) {
+            players[this.currentPlayerName].bestScore = finalScore;
+            players[this.currentPlayerName].bestTime = this.timerSeconds;
+            players[this.currentPlayerName].bestError = this.errorCount;
+            players[this.currentPlayerName].bestHint = this.hintCount;
+        }
+        players[this.currentPlayerName].finishedCount = (players[this.currentPlayerName].finishedCount || 0) + 1;
+        localStorage.setItem("sudoku_rank_data", JSON.stringify({ version: STORAGE_VERSION, data: this.rankData }));
+        // 每次记录后清理排行榜，防止条目过多
+        this.trimRankData();
+    }
+
+    failGame() {
+        if (this.isGameFinished) return;
+        this.stopTimer();
+        localStorage.removeItem("sudoku_progress");
+        if (!this.usedSolve && !this.isAnonymous) {
+            this.recordGameResult(false);
+            alert(`❌ 挑战失败！\n错误次数: ${this.errorCount}/${MAX_ERRORS}\n提示次数: ${this.hintCount}/${MAX_HINTS}\n用时: ${this.formatTime(this.timerSeconds)}\n本次得分: ${this.calculateScore(false)}`);
+        } else {
+            alert(`❌ 挑战失败！${this.isAnonymous ? "(匿名模式不计分)" : (this.usedSolve ? "(已使用求解不计分)" : "")}`);
+        }
+        this.isGameFinished = true;
+        if (this.currentPuzzle) this.resetToPuzzle(); else this.generateAndLoad();
+    }
+
+    winGame() {
+        if (this.isGameFinished) return;
+        this.stopTimer();
+        localStorage.removeItem("sudoku_progress");
+        if (!this.usedSolve && !this.isAnonymous) {
+            this.recordGameResult(true);
+            alert(`🎉 恭喜完成！\n错误次数: ${this.errorCount}/${MAX_ERRORS}\n提示次数: ${this.hintCount}/${MAX_HINTS}\n用时: ${this.formatTime(this.timerSeconds)}\n本次得分: ${this.calculateScore(true)}`);
+        } else {
+            alert(`🎉 已完成！${this.isAnonymous ? "(匿名模式不计分)" : (this.usedSolve ? "(已使用求解不计分)" : "")}`);
+        }
+        this.isGameFinished = true;
+        this.highlightCells.clear();
+        this.sameNumberHighlightSet.clear();
+        this.hintTargetCell = null;
+        this.clearAllHintHighlights();
+        this.updateGridUI();
+    }
+
+    checkCompletion() {
+        if (this.isGameFinished) return;
+        for (let i = 0; i < 9; i++) for (let j = 0; j < 9; j++) if (this.grid[i][j] === 0 || this.grid[i][j] !== this.solution[i][j]) return;
+        this.winGame();
+    }
+
+    computeConflictHighlight(row, col) {
+        if (row === -1 || col === -1) return new Set();
+        const val = this.grid[row][col];
+        if (val === 0) return new Set();
+        const hl = new Set();
+        for (let j = 0; j < 9; j++) hl.add(`${row},${j}`);
+        for (let i = 0; i < 9; i++) hl.add(`${i},${col}`);
+        const sr = Math.floor(row / 3) * 3, sc = Math.floor(col / 3) * 3;
+        for (let i = sr; i < sr + 3; i++) for (let j = sc; j < sc + 3; j++) hl.add(`${i},${j}`);
+        return hl;
+    }
+
+    highlightSameNumbers(num) {
+        this.sameNumberHighlightSet.clear();
+        for (let i = 0; i < 9; i++) for (let j = 0; j < 9; j++) if (this.grid[i][j] === num) this.sameNumberHighlightSet.add(`${i},${j}`);
+        this.updateGridUI();
+    }
+
+    clearConflictingNotes(row, col, num) {
+        for (let j = 0; j < 9; j++) this.notes[row][j].delete(num);
+        for (let i = 0; i < 9; i++) this.notes[i][col].delete(num);
+        const sr = Math.floor(row / 3) * 3, sc = Math.floor(col / 3) * 3;
+        for (let i = sr; i < sr + 3; i++) for (let j = sc; j < sc + 3; j++) this.notes[i][j].delete(num);
+    }
+
+    selectCell(row, col) {
+        if (this.isGameFinished || this.checkBlockInteraction() || this.checkPaused()) return;
+        this.clearAllHintHighlights();
+        this.selectedRow = row; this.selectedCol = col;
+        this.hintTargetCell = null;
+        this.highlightCells = this.computeConflictHighlight(row, col);
+        const num = this.grid[row][col];
+        if (num !== 0) {
+            this.sameNumberHighlightSet.clear();
+            for (let i = 0; i < 9; i++) for (let j = 0; j < 9; j++) if (this.grid[i][j] === num) this.sameNumberHighlightSet.add(`${i},${j}`);
+        } else {
+            this.sameNumberHighlightSet.clear();
+        }
+        this.updateGridUI();
+    }
+
+    autoSaveProgress() {
+        if (this.isGameFinished) return;
+        const progress = {
+            grid: this.grid,
+            notes: this.notes.map(row => row.map(s => Array.from(s))),
+            solution: this.solution,
+            currentPuzzle: this.currentPuzzle,
+            timerSeconds: this.timerSeconds,
+            pausedTimeAccumulated: this.pausedTimeAccumulated,
+            errorCount: this.errorCount,
+            hintCount: this.hintCount,
+            difficulty: this.dom.difficultySelect.value,
+            isGameFinished: this.isGameFinished,
+            timestamp: Date.now()
+        };
+        localStorage.setItem("sudoku_progress", JSON.stringify(progress));
+    }
+
+    loadProgress(progress) {
+        this.grid = progress.grid;
+        this.notes = progress.notes.map(row => row.map(arr => new Set(arr)));
+        this.solution = progress.solution;
+        this.currentPuzzle = progress.currentPuzzle;
+        this.timerSeconds = progress.timerSeconds;
+        this.pausedTimeAccumulated = progress.pausedTimeAccumulated || 0;
+        this.errorCount = progress.errorCount;
+        this.hintCount = progress.hintCount;
+        this.dom.difficultySelect.value = progress.difficulty;
+        this.currentDifficultyPercent = SudokuUtils.evaluateSudokuDifficulty(progress.currentPuzzle);
+        document.getElementById('diffPercent').textContent = this.currentDifficultyPercent;
+        this.selectedRow = -1; this.selectedCol = -1;
+        this.highlightCells.clear(); this.sameNumberHighlightSet.clear();
+        this.hintTargetCell = null;
+        this.updateErrorDisplay(); this.updateHintDisplay(); this.updateTimerDisplay();
+        this.updateGridUI();
+        this.startTimer();
+        this.gameStartTime = Date.now() - this.timerSeconds * 1000 - this.pausedTimeAccumulated;
+    }
+
+    fillSelectedCell(num) {
+        if (this.selectedRow === -1 || this.selectedCol === -1 || this.isGameFinished || this.checkPaused() || this.usedSolve || this.checkBlockInteraction()) return;
+        this.clearAllHintHighlights();
+        this.saveHistory();
+        if (this.isNoteMode) {
+            if (this.grid[this.selectedRow][this.selectedCol] === 0) {
+                const ns = this.notes[this.selectedRow][this.selectedCol];
+                if (ns.has(num)) ns.delete(num); else ns.add(num);
+                this.updateGridUI();
+                this.autoSaveProgress();
+            }
+        } else {
+            const oldVal = this.grid[this.selectedRow][this.selectedCol];
+            const correct = this.solution[this.selectedRow][this.selectedCol];
+            if (num !== correct && num !== oldVal) {
+                this.errorCount++; this.updateErrorDisplay();
+                if (this.errorCount >= MAX_ERRORS) { this.failGame(); return; }
+                else this.showToast(`⚠️ 填错了！剩余错误机会: ${MAX_ERRORS - this.errorCount}`, "error");
+            }
+            if (oldVal === num) {
+                this.grid[this.selectedRow][this.selectedCol] = 0;
+            } else {
+                this.grid[this.selectedRow][this.selectedCol] = num;
+                this.notes[this.selectedRow][this.selectedCol].clear();
+                this.clearConflictingNotes(this.selectedRow, this.selectedCol, num);
+            }
+            this.hintTargetCell = null;
+            this.highlightCells = this.computeConflictHighlight(this.selectedRow, this.selectedCol);
+            this.updateGridUI();
+            this.checkCompletion();
+            this.autoSaveProgress();
+        }
+    }
+
+    deleteSelectedCell() {
+        if (this.selectedRow === -1 || this.selectedCol === -1 || this.isGameFinished || this.checkPaused() || this.usedSolve || this.checkBlockInteraction()) return;
+        this.clearAllHintHighlights();
+        this.saveHistory();
+        if (this.isNoteMode) {
+            if (this.grid[this.selectedRow][this.selectedCol] === 0) {
+                this.notes[this.selectedRow][this.selectedCol].clear();
+                this.updateGridUI(); this.autoSaveProgress();
+            }
+        } else {
+            if (this.grid[this.selectedRow][this.selectedCol] !== 0) {
+                this.grid[this.selectedRow][this.selectedCol] = 0;
+                this.highlightCells = this.computeConflictHighlight(this.selectedRow, this.selectedCol);
+                this.updateGridUI(); this.autoSaveProgress();
+            } else {
+                this.notes[this.selectedRow][this.selectedCol].clear();
+                this.updateGridUI(); this.autoSaveProgress();
+            }
+        }
+    }
+
+    getNotesMap() {
+        let cMap = Array(9).fill().map(() => Array(9).fill([]));
+        for (let r = 0; r < 9; r++) {
+            for (let c = 0; c < 9; c++) {
+                if (this.grid[r][c] === 0) {
+                    cMap[r][c] = SudokuUtils.getPossibilities(this.grid, r, c);
+                }
+            }
+        }
+        return cMap;
+    }
+
+    findLogicalHint() {
+        let cmap = this.getNotesMap();
+        for (let i = 0; i < 9; i++) {
+            for (let j = 0; j < 9; j++) {
+                if (this.grid[i][j] === 0 && cmap[i][j].length === 1) {
+                    let lastPossible = cmap[i][j][0];
+                    const rowNums = this.grid[i].filter(v=>v!==0).join(',');
+                    const colNums = this.grid.map(row => row[j]).filter(v=>v!==0).join(',');
+                    return { type: 'NakedSingle', action: 'fill', r: i, c: j, val: lastPossible, rowNums, colNums, title: '💡 唯一余数法' };
+                }
+            }
+        }
+        for (let num = 1; num <= 9; num++) {
+            for (let i = 0; i < 9; i++) {
+                let possibleCols = [];
+                for (let j = 0; j < 9; j++) if (this.grid[i][j] === 0 && cmap[i][j].includes(num)) possibleCols.push(j);
+                if (possibleCols.length === 1) {
+                    let j = possibleCols[0];
+                    const excludedCols = Array.from({length:9}, (_,idx)=>idx).filter(x=>x!==j);
+                    const excludedCells = excludedCols.map(jj => ({r:i, c:jj})).filter(({r,c})=>this.grid[r][c]===0);
+                    return { type: 'HiddenSingleRow', action: 'fill', r: i, c: j, val: num, excludedCols, excludedCells, title: `💡 行排除法` };
+                }
+            }
+            for (let j = 0; j < 9; j++) {
+                let possibleRows = [];
+                for (let i = 0; i < 9; i++) if (this.grid[i][j] === 0 && cmap[i][j].includes(num)) possibleRows.push(i);
+                if (possibleRows.length === 1) {
+                    let i = possibleRows[0];
+                    const excludedRows = Array.from({length:9}, (_,idx)=>idx).filter(x=>x!==i);
+                    const excludedCells = excludedRows.map(ii => ({r:ii, c:j})).filter(({r,c})=>this.grid[r][c]===0);
+                    return { type: 'HiddenSingleCol', action: 'fill', r: i, c: j, val: num, excludedRows, excludedCells, title: `💡 列排除法` };
+                }
+            }
+            for (let block = 0; block < 9; block++) {
+                let sr = Math.floor(block / 3) * 3, sc = (block % 3) * 3, possibleCells = [];
+                for (let i = sr; i < sr + 3; i++) for (let j = sc; j < sc + 3; j++) if (this.grid[i][j] === 0 && cmap[i][j].includes(num)) possibleCells.push({r:i,c:j});
+                if (possibleCells.length === 1) {
+                    let {r, c} = possibleCells[0], excludedCells = [];
+                    for(let ii=sr;ii<sr+3;ii++) for(let jj=sc;jj<sc+3;jj++) if ((ii!==r || jj!==c) && this.grid[ii][jj]===0) excludedCells.push({r:ii, c:jj});
+                    return { type: 'HiddenSingleBlock', action: 'fill', r: r, c: c, val: num, blockSr: sr, blockSc: sc, excludedCells, title: `💡 宫排除法` };
+                }
+            }
+        }
+        for (let num = 1; num <= 9; num++) {
+            for (let b = 0; b < 9; b++) {
+                let sr = Math.floor(b / 3) * 3, sc = (b % 3) * 3, rows = new Set(), cols = new Set(), cells = [];
+                for (let i = sr; i < sr + 3; i++) {
+                    for (let j = sc; j < sc + 3; j++) {
+                        if (this.grid[i][j] === 0 && cmap[i][j].includes(num)) {
+                            rows.add(i); cols.add(j); cells.push({r: i, c: j});
+                        }
+                    }
+                }
+                if (cells.length > 1) {
+                    if (rows.size === 1) {
+                        let r = [...rows][0], eliminations = [];
+                        for (let j = 0; j < 9; j++) if (Math.floor(j/3)*3 !== sc && this.grid[r][j] === 0 && cmap[r][j].includes(num)) eliminations.push({r: r, c: j, val: num});
+                        if (eliminations.length > 0) return { type: 'PointingRow', action: 'eliminate', blockSr: sr, blockSc: sc, r: r, val: num, cells, eliminations, title: '💡 区块排除法 (行)' };
+                    }
+                    if (cols.size === 1) {
+                        let c = [...cols][0], eliminations = [];
+                        for (let i = 0; i < 9; i++) if (Math.floor(i/3)*3 !== sr && this.grid[i][c] === 0 && cmap[i][c].includes(num)) eliminations.push({r: i, c: c, val: num});
+                        if (eliminations.length > 0) return { type: 'PointingCol', action: 'eliminate', blockSr: sr, blockSc: sc, c: c, val: num, cells, eliminations, title: '💡 区块排除法 (列)' };
+                    }
+                }
+            }
+        }
+        for(let region = 0; region < 27; region++) {
+            let cells = [];
+            for(let k = 0; k < 9; k++) {
+                let r, c;
+                if (region < 9) { r = region; c = k; }
+                else if (region < 18) { r = k; c = region - 9; }
+                else { r = Math.floor((region-18)/3)*3 + Math.floor(k/3); c = ((region-18)%3)*3 + (k%3); }
+                if (this.grid[r][c] === 0 && cmap[r][c].length === 2) cells.push({r, c, cands: cmap[r][c]});
+            }
+            for (let a = 0; a < cells.length; a++) {
+                for (let b = a + 1; b < cells.length; b++) {
+                    let ca = cells[a], cb = cells[b];
+                    if (ca.cands[0] === cb.cands[0] && ca.cands[1] === cb.cands[1]) {
+                        let eliminations = [];
+                        for(let k = 0; k < 9; k++) {
+                            let r, c;
+                            if (region < 9) { r = region; c = k; }
+                            else if (region < 18) { r = k; c = region - 9; }
+                            else { r = Math.floor((region-18)/3)*3 + Math.floor(k/3); c = ((region-18)%3)*3 + (k%3); }
+                            if ((r !== ca.r || c !== ca.c) && (r !== cb.r || c !== cb.c) && this.grid[r][c] === 0) {
+                                if (cmap[r][c].includes(ca.cands[0])) eliminations.push({r, c, val: ca.cands[0]});
+                                if (cmap[r][c].includes(ca.cands[1])) eliminations.push({r, c, val: ca.cands[1]});
+                            }
+                        }
+                        if (eliminations.length > 0) {
+                            let typeName = region < 9 ? '行' : (region < 18 ? '列' : '宫');
+                            return { type: 'NakedPair', action: 'eliminate', regionName: typeName, pairCells: [ca, cb], vals: ca.cands, eliminations, title: `💡 显性数对 (${typeName})` };
+                        }
+                    }
+                }
+            }
+        }
+        for (let num = 1; num <= 9; num++) {
+            let rowLocs = [];
+            for (let r = 0; r < 9; r++) {
+                let cols = [];
+                for (let c = 0; c < 9; c++) if (this.grid[r][c] === 0 && cmap[r][c].includes(num)) cols.push(c);
+                if (cols.length === 2) rowLocs.push({r, c1: cols[0], c2: cols[1]});
+            }
+            for (let i = 0; i < rowLocs.length; i++) {
+                for (let j = i + 1; j < rowLocs.length; j++) {
+                    let r1 = rowLocs[i], r2 = rowLocs[j];
+                    if (r1.c1 === r2.c1 && r1.c2 === r2.c2) {
+                        let eliminations = [];
+                        [r1.c1, r1.c2].forEach(c => {
+                            for (let r = 0; r < 9; r++) {
+                                if (r !== r1.r && r !== r2.r && this.grid[r][c] === 0 && cmap[r][c].includes(num)) eliminations.push({r, c, val: num});
+                            }
+                        });
+                        if (eliminations.length > 0) return { type: 'XWingRow', action: 'eliminate', r1: r1.r, r2: r2.r, c1: r1.c1, c2: r1.c2, val: num, eliminations, title: '💡 X-Wing (行基准)' };
+                    }
+                }
+            }
+            let colLocs = [];
+            for (let c = 0; c < 9; c++) {
+                let rows = [];
+                for (let r = 0; r < 9; r++) if (this.grid[r][c] === 0 && cmap[r][c].includes(num)) rows.push(r);
+                if (rows.length === 2) colLocs.push({c, r1: rows[0], r2: rows[1]});
+            }
+            for (let i = 0; i < colLocs.length; i++) {
+                for (let j = i + 1; j < colLocs.length; j++) {
+                    let c1 = colLocs[i], c2 = colLocs[j];
+                    if (c1.r1 === c2.r1 && c1.r2 === c2.r2) {
+                        let eliminations = [];
+                        [c1.r1, c1.r2].forEach(r => {
+                            for (let c = 0; c < 9; c++) {
+                                if (c !== c1.c && c !== c2.c && this.grid[r][c] === 0 && cmap[r][c].includes(num)) eliminations.push({r, c, val: num});
+                            }
+                        });
+                        if (eliminations.length > 0) return { type: 'XWingCol', action: 'eliminate', c1: c1.c, c2: c2.c, r1: c1.r1, r2: c1.r2, val: num, eliminations, title: '💡 X-Wing (列基准)' };
+                    }
+                }
+            }
+        }
+        let bestR = -1, bestC = -1, minPoss = 10, bestVal = 0;
+        for (let i = 0; i < 9; i++) {
+            for (let j = 0; j < 9; j++) {
+                if (this.grid[i][j] === 0) {
+                    let poss = cmap[i][j].length;
+                    if (poss < minPoss && poss > 0) {
+                        minPoss = poss; bestR = i; bestC = j; bestVal = this.solution[i][j];
+                    }
+                }
+            }
+        }
+        if (bestR !== -1) return { type: 'SmartReveal', action: 'fill', r: bestR, c: bestC, val: bestVal, title: '💡 破局点指引' };
+        return null;
+    }
+
+    generateHintSteps(hintData) {
+        const {r, c, val, type} = hintData;
+        let steps = [];
+        if (type === 'PointingRow' || type === 'PointingCol') {
+            const regionStr = type === 'PointingRow' ? `第 ${hintData.r+1} 行` : `第 ${hintData.c+1} 列`;
+            steps.push({
+                indicator: "步骤 1/2",
+                text: `观察这个 <b>九宫格</b>（紫色高亮）。<br>数字 <b>${hintData.val}</b> 只能填在黄色高亮的这些格子里。这说明什么呢？`,
+                highlights: [
+                    {allBlock: true, sr: hintData.blockSr, sc: hintData.blockSc, class: 'hint-region-block'},
+                    ...hintData.cells.map(cell => ({target: true, r: cell.r, c: cell.c, class: 'hint-target'}))
+                ]
+            });
+            steps.push({
+                indicator: "步骤 2/2",
+                text: `既然 <b>${hintData.val}</b> 必然在这几个格子里，那么 ${regionStr} 的<b>其他位置</b>（红色高亮）就绝对不能再填 ${hintData.val} 了！<br>我们可以将它们从候选数中排除。`,
+                highlights: [
+                    ...hintData.cells.map(cell => ({target: true, r: cell.r, c: cell.c, class: 'hint-target'})),
+                    ...hintData.eliminations.map(elim => ({target: true, r: elim.r, c: elim.c, class: 'conflict-highlight'}))
+                ]
+            });
+        } 
+        else if (type === 'NakedPair') {
+             steps.push({
+                indicator: "步骤 1/2",
+                text: `观察 <b>${hintData.regionName}</b> 里的这两个黄色格子。<br>它们都只能填 <b>${hintData.vals[0]} 或 ${hintData.vals[1]}</b>。这两个数字被它们“锁死”了！`,
+                highlights: [ ...hintData.pairCells.map(cell => ({target: true, r: cell.r, c: cell.c, class: 'hint-target'})) ]
+            });
+            steps.push({
+                indicator: "步骤 2/2",
+                text: `既然它们占据了 ${hintData.vals[0]} 和 ${hintData.vals[1]}，那么同一个 ${hintData.regionName} 的<b>其他空位</b>（红色高亮）就不能再填这两个数字了！<br>我们可以安全地排除这些干扰项。`,
+                highlights: [
+                    ...hintData.pairCells.map(cell => ({target: true, r: cell.r, c: cell.c, class: 'hint-target'})),
+                    ...hintData.eliminations.map(elim => ({target: true, r: elim.r, c: elim.c, class: 'conflict-highlight'}))
+                ]
+            });
+        }
+        else if (type === 'XWingRow' || type === 'XWingCol') {
+            const isRow = type === 'XWingRow';
+            const axisName = isRow ? '行' : '列', crossName = isRow ? '列' : '行';
+            steps.push({
+                indicator: "步骤 1/2",
+                text: `观察这两${axisName}（紫色区域）。<br>数字 <b>${hintData.val}</b> 在这两${axisName}中，都仅存在于这两个${crossName}的交叉点上（黄色高亮）。这形成了一个 X-Wing 矩阵结构。`,
+                highlights: [
+                    isRow ? {allRow: true, r: hintData.r1, class: 'hint-region-block'} : {allCol: true, c: hintData.c1, class: 'hint-region-block'},
+                    isRow ? {allRow: true, r: hintData.r2, class: 'hint-region-block'} : {allCol: true, c: hintData.c2, class: 'hint-region-block'},
+                    {target: true, r: hintData.r1, c: hintData.c1, class: 'hint-target'}, {target: true, r: hintData.r1, c: hintData.c2, class: 'hint-target'},
+                    {target: true, r: hintData.r2, c: hintData.c1, class: 'hint-target'}, {target: true, r: hintData.r2, c: hintData.c2, class: 'hint-target'}
+                ]
+            });
+            steps.push({
+                indicator: "步骤 2/2",
+                text: `由于对角线互斥原理，这两个${crossName}上的<b>其他格子</b>（红色高亮）绝对不可能再填入 ${hintData.val}！<br>我们可以安全排除。`,
+                highlights: [
+                    {target: true, r: hintData.r1, c: hintData.c1, class: 'hint-target'}, {target: true, r: hintData.r1, c: hintData.c2, class: 'hint-target'},
+                    {target: true, r: hintData.r2, c: hintData.c1, class: 'hint-target'}, {target: true, r: hintData.r2, c: hintData.c2, class: 'hint-target'},
+                    ...hintData.eliminations.map(elim => ({target: true, r: elim.r, c: elim.c, class: 'conflict-highlight'}))
+                ]
+            });
+        }
+        else if (type === 'NakedSingle') {
+            steps.push({ indicator: "步骤 1/4", text: `第一步：先看 <b>第 ${r+1} 行</b>（蓝色高亮），已有数字：${hintData.rowNums}`, highlights: [{allRow: true, r: r, class: 'hint-region-row'}] });
+            steps.push({ indicator: "步骤 2/4", text: `第二步：再看 <b>第 ${c+1} 列</b>（绿色高亮），已有数字：${hintData.colNums}`, highlights: [{allRow: true, r: r, class: 'hint-region-row'}, {allCol: true, c: c, class: 'hint-region-col'}] });
+            steps.push({ indicator: "步骤 3/4", text: `第三步：最后看这个 <b>九宫格</b>（紫色高亮）`, highlights: [{allRow: true, r: r, class: 'hint-region-row'}, {allCol: true, c: c, class: 'hint-region-col'}, {allBlock: true, sr: Math.floor(r/3)*3, sc: Math.floor(c/3)*3, class: 'hint-region-block'}] });
+            steps.push({ indicator: "步骤 4/4", text: `第四步：结合所有数字，1-9里就缺了 <b>${val}</b>！<br>所以只能填 ${val}`, highlights: [{target: true, r: r, c: c, class: 'hint-target'}] });
+        } 
+        else if (type === 'HiddenSingleRow' || type === 'HiddenSingleCol') {
+            const regionStr = type === 'HiddenSingleRow' ? `第 ${r+1} 行（蓝色）` : `第 ${c+1} 列（绿色）`;
+            const hRegion = type === 'HiddenSingleRow' ? {allRow: true, r: r, class: 'hint-region-row'} : {allCol: true, c: c, class: 'hint-region-col'};
+            steps.push({ indicator: "步骤 1/3", text: `第一步：看 <b>${regionStr}</b>，数字 ${val} 能填在哪个位置？`, highlights: [hRegion] });
+            steps.push({ indicator: "步骤 2/3", text: `第二步：其他空位被行/列/宫的 ${val} 冲突排除了`, highlights: [hRegion, {excludedCells: true, cells: hintData.excludedCells, class: 'hint-excluded'}] });
+            steps.push({ indicator: "步骤 3/3", text: `第三步：排除完毕，只剩黄色的格子能填 ${val}！`, highlights: [{target: true, r: r, c: c, class: 'hint-target'}] });
+        }
+        else if (type === 'HiddenSingleBlock') {
+            steps.push({ indicator: "步骤 1/3", text: `第一步：看这个 <b>九宫格</b>，数字 ${val} 能填在哪？`, highlights: [{allBlock: true, sr: hintData.blockSr, sc: hintData.blockSc, class: 'hint-region-block'}] });
+            steps.push({ indicator: "步骤 2/3", text: `第二步：宫内其他空位受周围影响被排除了`, highlights: [{allBlock: true, sr: hintData.blockSr, sc: hintData.blockSc, class: 'hint-region-block'}, {excludedCells: true, cells: hintData.excludedCells, class: 'hint-excluded'}] });
+            steps.push({ indicator: "步骤 3/3", text: `第三步：排除完，这个宫就只剩黄色的格子能填 ${val}！`, highlights: [{target: true, r: r, c: c, class: 'hint-target'}] });
+        }
+        else {
+            steps.push({ indicator: "步骤 1/2", text: `目前盘面比较复杂，我们先来看 <b>第 ${r+1} 行, 第 ${c+1} 列</b> 这个格子（黄色高亮）`, highlights: [{target: true, r: r, c: c, class: 'hint-target'}] });
+            steps.push({ indicator: "步骤 2/2", text: `经过深层推理，它是当前的最佳突破口，答案是 <b>${val}</b>`, highlights: [{target: true, r: r, c: c, class: 'hint-target'}] });
+        }
+        return steps;
+    }
+
+    giveHint() {
+        if (this.isGameFinished || this.checkBlockInteraction() || this.checkPaused()) return;
+        if (this.usedSolve) { this.showToast("已使用求解，无法继续提示", "error"); return; }
+        if (this.hintCount >= MAX_HINTS) { this.showToast("提示次数已达上限 (3/3)", "error"); return; }
+        const hintData = this.findLogicalHint();
+        if (!hintData) { this.showToast("盘面异常，无法推理，请检查是否填错了数字", "error"); return; }
+        this.saveHistory();
+        if (hintData.action === 'fill') {
+            this.hintTargetCell = { r: hintData.r, c: hintData.c };
+            this.selectedRow = hintData.r; this.selectedCol = hintData.c;
+            this.highlightSameNumbers(hintData.val);
+            this.highlightCells = this.computeConflictHighlight(hintData.r, hintData.c);
+        }
+        this.updateGridUI();
+        this.showManualHintModal(hintData);
+    }
+
+    showManualHintModal(hintData) {
+        this.isHintModalOpen = true;
+        const steps = this.generateHintSteps(hintData);
+        this.currentHintSteps = steps;
+        this.currentHintStepIndex = 0;
+        this.currentHintData = hintData;
+        const btnText = hintData.action === 'eliminate' ? '帮我排除不可能的笔记' : `帮我填入 ${hintData.val}`;
+        const modal = document.createElement('div'); 
+        modal.className = 'modal';
+        modal.id = 'hintModal';
+        modal.innerHTML = `
+            <div class="modal-content hint-modal-content">
+                <h3 class="hint-title">${hintData.title}</h3>
+                <div class="hint-step-indicator" id="hintStepIndicator">准备开始...</div>
+                <div class="hint-desc" id="hintDescEl">点击下一步开始看推理过程</div>
+                <div class="hint-steps-nav">
+                    <button id="prevStepBtn" disabled>⬅️ 上一步</button>
+                    <button id="nextStepBtn">下一步 ➡️</button>
+                </div>
+                <div class="hint-actions">
+                    <button id="cancelHintBtn" style="background:#e2e8f0; color:#334155; display:none;">明白了，我自己来</button>
+                    <button id="applyHintBtn" class="primary-btn" style="display:none;">${btnText}</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        const self = this;
+        document.getElementById('prevStepBtn').addEventListener('click', () => self.goToStep(self.currentHintStepIndex - 1));
+        document.getElementById('nextStepBtn').addEventListener('click', () => self.goToStep(self.currentHintStepIndex + 1));
+        document.getElementById('cancelHintBtn').addEventListener('click', () => {
+            self.clearAllHintHighlights();
+            self.currentHintSteps = null; self.currentHintData = null; modal.remove();
+            self.isHintModalOpen = false;
+        });
+        document.getElementById('applyHintBtn').addEventListener('click', () => {
+            const data = self.currentHintData;
+            modal.remove();
+            self.clearAllHintHighlights();
+            self.currentHintSteps = null; self.currentHintData = null;
+            self.isHintModalOpen = false;
+            self.hintCount++;
+            self.updateHintDisplay();
+            if (data.action === 'eliminate') {
+                let noteFilled = false;
+                if (!self.isNoteMode) {
+                    self.toggleNoteMode(true);
+                    noteFilled = true;
+                }
+                let relevantCells = [];
+                if (data.cells) relevantCells.push(...data.cells);
+                if (data.pairCells) relevantCells.push(...data.pairCells);
+                if (data.eliminations) relevantCells.push(...data.eliminations);
+                if (data.type === 'XWingRow' || data.type === 'XWingCol') {
+                    relevantCells.push({r: data.r1, c: data.c1}, {r: data.r1, c: data.c2}, {r: data.r2, c: data.c1}, {r: data.r2, c: data.c2});
+                }
+                const unique = new Map();
+                relevantCells.forEach(cell => { unique.set(`${cell.r},${cell.c}`, cell); });
+                [...unique.values()].forEach(cell => {
+                    if (self.grid[cell.r][cell.c] === 0 && self.notes[cell.r][cell.c].size === 0) {
+                        let poss = SudokuUtils.getPossibilities(self.grid, cell.r, cell.c);
+                        poss.forEach(p => self.notes[cell.r][cell.c].add(p));
+                    }
+                });
+                data.eliminations.forEach(elim => self.notes[elim.r][elim.c].delete(elim.val));
+                if (noteFilled) {
+                    self.showToast(`💡 已自动开启笔记，并仅填充相关区域候选数！(剩余提示: ${MAX_HINTS - self.hintCount})`, "success", 4000);
+                } else {
+                    self.showToast(`💡 成功排除冲突候选数！(剩余提示: ${MAX_HINTS - self.hintCount})`, "success");
+                }
+            } else {
+                self.grid[data.r][data.c] = data.val;
+                self.notes[data.r][data.c].clear();
+                self.clearConflictingNotes(data.r, data.c, data.val);
+                self.hintTargetCell = null;
+                self.highlightCells = self.computeConflictHighlight(data.r, data.c);
+                self.showToast(`💡 剩余提示次数: ${MAX_HINTS - self.hintCount}`, "info");
+            }
+            self.updateGridUI();
+            self.checkCompletion();
+            self.autoSaveProgress();
+        });
+        this.goToStep(0);
+    }
+
+    clearAllHintHighlights() {
+        document.querySelectorAll('.cell').forEach(cell => {
+            cell.classList.remove('hint-region-row', 'hint-region-col', 'hint-region-block', 'hint-excluded', 'hint-target', 'conflict-highlight');
+        });
+    }
+
+    applyStepHighlights(highlights) {
+        this.clearAllHintHighlights();
+        if (!highlights) return;
+        for(const h of highlights) {
+            if (h.allRow !== undefined) {
+                for(let j=0;j<9;j++) document.getElementById(`cell-${h.r}-${j}`).classList.add(h.class);
+            }
+            if (h.allCol !== undefined) {
+                for(let i=0;i<9;i++) document.getElementById(`cell-${i}-${h.c}`).classList.add(h.class);
+            }
+            if (h.allBlock !== undefined) {
+                for(let i=h.sr;i<h.sr+3;i++) {
+                    for(let j=h.sc;j<h.sc+3;j++) document.getElementById(`cell-${i}-${j}`).classList.add(h.class);
+                }
+            }
+            if (h.excludedCells) {
+                for(const {r,c} of h.excludedCells) document.getElementById(`cell-${r}-${c}`).classList.add(h.class);
+            }
+            if (h.target) {
+                document.getElementById(`cell-${h.r}-${h.c}`).classList.add(h.class);
+            }
+        }
+    }
+
+    goToStep(index) {
+        if (!this.currentHintSteps || index <0 || index >= this.currentHintSteps.length) return;
+        this.currentHintStepIndex = index;
+        const step = this.currentHintSteps[index];
+        this.applyStepHighlights(step.highlights);
+        document.getElementById('hintStepIndicator').textContent = step.indicator;
+        document.getElementById('hintDescEl').innerHTML = step.text;
+        document.getElementById('prevStepBtn').disabled = index === 0;
+        document.getElementById('nextStepBtn').disabled = index === this.currentHintSteps.length -1;
+        const isLast = index === this.currentHintSteps.length -1;
+        document.getElementById('cancelHintBtn').style.display = isLast ? 'inline-block' : 'none';
+        document.getElementById('applyHintBtn').style.display = isLast ? 'inline-block' : 'none';
+    }
+
+    checkBlockInteraction() {
+        if (this.isHintModalOpen || document.querySelector('.modal')) {
+            this.showToast("请先关闭当前的弹窗", "warning", 2000);
+            return true;
+        }
+        return false;
+    }
+
+    generateAndLoad() {
+        if (this.checkBlockInteraction() || this.checkPaused() || this.isGenerating) return;
+        this.isGenerating = true;
+        this.dom.generateBtn.disabled = true;
+        this.dom.loadingOverlay.classList.add('active'); 
+        setTimeout(() => {
+            const { puzzle, solution: sol } = SudokuUtils.generateNewPuzzleData(this.dom.difficultySelect.value);
+            this.loadPuzzle(puzzle, sol);
+            this.isGenerating = false;
+            this.dom.generateBtn.disabled = false;
+            this.dom.loadingOverlay.classList.remove('active'); 
+        }, 50);
+    }
+
+    loadPuzzle(puzzleData, solutionData) {
+        this.clearAllHintHighlights();
+        this.currentHintSteps = null;
+        this.currentHintData = null;
+        for (let i = 0; i < 9; i++) {
+            for (let j = 0; j < 9; j++) {
+                this.grid[i][j] = puzzleData[i][j];
+                this.notes[i][j].clear();
+            }
+        }
+        this.solution = solutionData.map(row => [...row]);
+        this.currentPuzzle = puzzleData.map(row => [...row]);
+        this.selectedRow = -1; this.selectedCol = -1;
+        this.highlightCells.clear(); this.sameNumberHighlightSet.clear();
+        this.hintTargetCell = null;
+        this.currentDifficultyPercent = SudokuUtils.evaluateSudokuDifficulty(puzzleData);
+        document.getElementById('diffPercent').textContent = this.currentDifficultyPercent;
+        this.updateGridUI();
+        this.resetGameState();
+    }
+
+    resetToPuzzle() {
+        if (this.checkBlockInteraction() || this.checkPaused()) return;
+        this.clearAllHintHighlights();
+        this.currentHintSteps = null; this.currentHintData = null;
+        if (!this.currentPuzzle) this.generateAndLoad();
+        else this.loadPuzzle(this.currentPuzzle, this.solution);
+    }
+
+    solveCurrent() {
+        if (this.isGameFinished || this.checkBlockInteraction() || this.checkPaused()) return;
+        if (this.usedSolve) { this.showToast("已使用过求解", "info"); return; }
+        if (!confirm("⚠️ 使用求解将自动生成全部正确答案，且本次游戏不计入排名。是否继续？")) return;
+        this.usedSolve = true;
+        const solved = SudokuUtils.getSolution(this.grid);
+        if (solved) {
+            for (let i = 0; i < 9; i++) {
+                for (let j = 0; j < 9; j++) {
+                    this.grid[i][j] = solved[i][j];
+                    this.notes[i][j].clear();
+                }
+            }
+            this.solution = solved.map(row => [...row]);
+            this.highlightCells.clear(); this.sameNumberHighlightSet.clear();
+            this.selectedRow = -1; this.selectedCol = -1;
+            this.hintTargetCell = null;
+            this.clearAllHintHighlights();
+            this.currentHintSteps = null; this.currentHintData = null;
+            this.updateGridUI();
+            this.isGameFinished = true;
+            this.stopTimer();
+            localStorage.removeItem("sudoku_progress");
+            this.showToast("已生成完整答案，本次游戏不计入排名", "success");
+        } else {
+            alert("求解失败");
+            this.usedSolve = false;
+        }
+    }
+
+    loadHardestSudoku() {
+        if (this.checkBlockInteraction() || this.checkPaused()) return;
+        const hardest = [[8,0,0,0,0,0,0,0,0],[0,0,3,6,0,0,0,0,0],[0,7,0,0,9,0,2,0,0],[0,5,0,0,0,7,0,0,0],[0,0,0,0,4,5,7,0,0],[0,0,0,1,0,0,0,3,0],[0,0,1,0,0,0,0,6,8],[0,0,8,5,0,0,0,1,0],[0,9,0,0,0,0,4,0,0]];
+        const sol = SudokuUtils.getSolution(hardest);
+        if (sol) this.loadPuzzle(hardest, sol); else this.generateAndLoad();
+    }
+
+    getCompletedDigits() {
+        let completed = new Array(10).fill(false);
+        for (let d = 1; d <= 9; d++) {
+            let count = 0;
+            for (let i = 0; i < 9; i++) for (let j = 0; j < 9; j++) if (this.solution[i][j] === d && this.grid[i][j] === d) count++;
+            if (count === 9) completed[d] = true;
+        }
+        return completed;
+    }
+
+    renderNumberPadCompletion() {
+        const completed = this.getCompletedDigits();
+        const btns = document.querySelectorAll('.num-btn');
+        btns.forEach(btn => {
+            const num = parseInt(btn.getAttribute('data-num'));
+            if (completed[num]) btn.classList.add('completed');
+            else btn.classList.remove('completed');
+        });
+    }
+
+    buildNumberPad() {
+        this.dom.numberPadDiv.innerHTML = '';
+        for (let i = 1; i <= 9; i++) {
+            const btn = document.createElement('button');
+            btn.className = 'num-btn';
+            btn.textContent = i;
+            btn.setAttribute('data-num', i);
+            btn.addEventListener('click', () => {
+                if (this.checkPaused()) return;
+                this.fillSelectedCell(i);
+                this.highlightSameNumbers(i);
+            });
+            this.dom.numberPadDiv.appendChild(btn);
+        }
+    }
+
+    showRanking() {
+        if (this.isAnonymous) { this.showToast("匿名模式无排名记录", "info"); return; }
+        // 打开排行榜前先清理，确保数据量可控
+        this.trimRankData();
+        const diff = this.dom.difficultySelect.value;
+        const diffNames = { easy: '简单', medium: '中等', hard: '困难', expert: '专家', master: '大师', extreme: '终极' };
+        const players = this.rankData[diff] || {};
+        const entries = Object.entries(players);
+        // 如果条目仍然过多（防御），只取前200条再排序
+        let sortedEntries = entries;
+        if (entries.length > 200) {
+            sortedEntries = entries.slice(0, 200);
+        }
+        sortedEntries.sort((a, b) => b[1].bestScore - a[1].bestScore);
+        // 最多展示100条，防止DOM过多
+        const topList = sortedEntries.slice(0, 100);
+        const modal = document.createElement('div'); modal.className = 'modal';
+        let html = `
+            <div class="modal-content">
+                <h3>🏅 ${diffNames[diff]}难度排行榜</h3>
+                <div style="margin-top:16px;">
+        `;
+        if (topList.length === 0) {
+            html += `<div style="text-align:center;color:#94a3b8;padding:20px;">暂无排名记录，快去挑战吧！</div>`;
+        } else {
+            html += `
+                <div style="display:flex;justify-content:space-between;font-weight:bold;padding:8px 0;border-bottom:1px solid #e2e8f0;">
+                    <span>排名</span><span>玩家</span><span>得分</span><span>用时</span>
+                </div>
+            `;
+            topList.forEach(([name, data], idx) => {
+                const isCurrentUser = name === this.currentPlayerName;
+                const rank = idx +1;
+                let rankIcon = rank ===1 ? '🥇' : (rank ===2 ? '🥈' : (rank ===3 ? '🥉' : `#${rank}`));
+                const style = isCurrentUser ? 'background:#dbeafe;padding:4px 8px;border-radius:8px;' : 'padding:4px 8px;';
+                html += `
+                    <div class="rank-item" style="${style}">
+                        <span>${rankIcon}</span>
+                        <span>${name}${isCurrentUser ? ' (你)' : ''}</span>
+                        <span>${data.bestScore}</span>
+                        <span>${this.formatTime(data.bestTime)}</span>
+                    </div>
+                `;
+            });
+        }
+        html += `</div><button style="width:100%;margin-top:16px;" onclick="this.closest('.modal').remove()">关闭</button></div>`;
+        modal.innerHTML = html;
+        document.body.appendChild(modal);
+    }
+
+    initPlayer() {
+        const savedName = localStorage.getItem("sudoku_player_name");
+        if (savedName) {
+            this.currentPlayerName = savedName; this.isAnonymous = false;
+        } else {
+            const name = prompt("欢迎来到数独游戏！\n请输入你的名字，用于记录排行榜：");
+            if (name && name.trim()) {
+                this.currentPlayerName = name.trim();
+                localStorage.setItem("sudoku_player_name", this.currentPlayerName);
+                this.isAnonymous = false;
+            } else {
+                this.isAnonymous = true;
+                this.showToast("你已进入匿名模式，本次游戏不计入排名", "info");
+            }
+        }
+    }
+
+    toggleNoteMode(forceState = null) {
+        this.isNoteMode = forceState !== null ? forceState : !this.isNoteMode;
+        this.dom.noteModeBtn.classList.toggle('active', this.isNoteMode);
+        if (this.isNoteMode) {
+            this.dom.noteModeIndicator.classList.add('active');
+        } else {
+            this.dom.noteModeIndicator.classList.remove('active');
+        }
+    }
+
+    bindEvents() {
+        this.dom.noteModeBtn.addEventListener('click', () => {
+            if (this.checkBlockInteraction()) return;
+            this.toggleNoteMode();
+        });
+        this.dom.solveBtn.addEventListener('click', () => this.solveCurrent());
+        this.dom.resetBtn.addEventListener('click', () => this.resetToPuzzle());
+        this.dom.generateBtn.addEventListener('click', () => this.generateAndLoad());
+        this.dom.hardestBtn.addEventListener('click', () => this.loadHardestSudoku());
+        this.dom.undoBtn.addEventListener('click', () => this.undo());
+        this.dom.redoBtn.addEventListener('click', () => this.redo());
+        this.dom.pauseBtn.addEventListener('click', () => this.pauseTimer());
+        this.dom.deleteBtn.addEventListener('click', () => this.deleteSelectedCell());
+        this.dom.hintBtn.addEventListener('click', () => this.giveHint());
+        this.dom.rankBtn.addEventListener('click', () => this.showRanking());
+        
+        document.addEventListener('keydown', (e) => {
+            if (this.isGameFinished || this.isPaused || this.isHintModalOpen) return;
+            if (e.key >= '1' && e.key <= '9') {
+                this.fillSelectedCell(parseInt(e.key));
+            } else if (e.key === 'Backspace' || e.key === 'Delete') {
+                this.deleteSelectedCell();
+            } else if (e.key === 'z' && e.ctrlKey) {
+                this.undo();
+            } else if (e.key === 'y' && e.ctrlKey) {
+                this.redo();
+            } else if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'w', 'a', 's', 'd'].includes(e.key)) {
+                e.preventDefault();
+                let r = this.selectedRow === -1 ? 4 : this.selectedRow;
+                let c = this.selectedCol === -1 ? 4 : this.selectedCol;
+                if (e.key === 'ArrowUp' || e.key === 'w') r = (r - 1 + 9) % 9;
+                if (e.key === 'ArrowDown' || e.key === 's') r = (r + 1) % 9;
+                if (e.key === 'ArrowLeft' || e.key === 'a') c = (c - 1 + 9) % 9;
+                if (e.key === 'ArrowRight' || e.key === 'd') c = (c + 1) % 9;
+                this.selectCell(r, c);
+            }
+        });
+    }
+}
+
+window.addEventListener('load', () => {
+    const game = new SudokuGame();
+    const savedProgress = localStorage.getItem("sudoku_progress");
+    if (savedProgress) {
+        try {
+            const progress = JSON.parse(savedProgress);
+            if (progress.timestamp && Date.now() - progress.timestamp < 24 * 60 * 60 * 1000) {
+                if (confirm("检测到未完成的游戏进度，是否继续？")) {
+                    game.loadProgress(progress);
+                    return;
+                }
+            }
+        } catch(e) {
+            console.error("Load progress failed", e);
+        }
+    }
+    game.generateAndLoad();
+});
+</script>
+</body>
+</html>
